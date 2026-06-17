@@ -1,4 +1,4 @@
-import { loginToTelegram, hasSavedSession, reconnectFromSession, getCurrentUser, logout } from './auth.js';
+import { loginToTelegram, hasSavedSession, reconnectFromSession, getCurrentUser, logout, getSavedCredentials } from './auth.js';
 import { fetchDialogs, getAvatarColor, getInitials } from './dialogs.js';
 import { fetchParticipants } from './participants.js';
 import { sendBulkMessages } from './sender.js';
@@ -87,6 +87,13 @@ function renderHeader() {
 
 // ============ Page 1: Login ============
 function renderLoginPage() {
+  const creds = getSavedCredentials();
+  const savedApiId = creds ? (creds.apiId || '') : '';
+  const savedApiHash = creds ? (creds.apiHash || '') : '';
+  
+  const apiIdVal = (savedApiId && savedApiId !== '2496' && savedApiId !== '2040') ? savedApiId : '';
+  const apiHashVal = (savedApiHash && savedApiHash !== '8da85b0d5bfe62527e5b244c209159c3' && savedApiHash !== 'b18441a1ab607e11058b37e2652e13e3') ? savedApiHash : '';
+
   return `
     <div class="main-container">
       <div class="glass-card login-card">
@@ -98,23 +105,23 @@ function renderLoginPage() {
           <input type="text" id="input-phone" placeholder="Masalan: +998901234567" autocomplete="off" />
         </div>
 
-        <details class="advanced-settings-details">
+        <details class="advanced-settings-details" ${apiIdVal || apiHashVal ? 'open' : ''}>
           <summary>
             <span>⚙️ Kengaytirilgan sozlamalar</span>
           </summary>
           <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 16px;">
             <div class="form-group" style="margin-bottom: 0;">
               <label for="input-api-id">API ID (ixtiyoriy)</label>
-              <input type="text" id="input-api-id" placeholder="Masalan: 12345678" autocomplete="off" />
+              <input type="text" id="input-api-id" placeholder="Masalan: 12345678" value="${apiIdVal}" autocomplete="off" />
             </div>
 
             <div class="form-group" style="margin-bottom: 0;">
               <label for="input-api-hash">API Hash (ixtiyoriy)</label>
-              <input type="text" id="input-api-hash" placeholder="Masalan: a1b2c3d4e5f6..." autocomplete="off" />
+              <input type="text" id="input-api-hash" placeholder="Masalan: a1b2c3d4e5f6..." value="${apiHashVal}" autocomplete="off" />
             </div>
             
             <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0; line-height: 1.4;">
-              Agar bo'sh qoldirilsa, standart Telegram Desktop ma'lumotlari ishlatiladi.
+              Agar bo'sh qoldirilsa, standart Telegram Web ma'lumotlari ishlatiladi.
             </p>
           </div>
         </details>
@@ -861,9 +868,9 @@ async function handleConnect() {
     return;
   }
 
-  // Standart Telegram Desktop API ma'lumotlari
-  const apiId = customApiId || '2040';
-  const apiHash = customApiHash || 'b18441a1ab607e11058b37e2652e13e3';
+  // Standart Telegram Web API ma'lumotlari (Webogram)
+  const apiId = customApiId || '2496';
+  const apiHash = customApiHash || '8da85b0d5bfe62527e5b244c209159c3';
 
   // Agar bittasi kiritilib, ikkinchisi kiritilmagan bo'lsa
   if ((customApiId && !customApiHash) || (!customApiId && customApiHash)) {
