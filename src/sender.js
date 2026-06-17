@@ -51,6 +51,9 @@ export async function sendBulkMessages(users, message, callbacks = {}, batchSize
   const totalBatches = Math.ceil(total / batchSize);
   if (onLog) onLog('info', `📤 Yuborish boshlandi. Jami: ${total} ta foydalanuvchi (${totalBatches} partiya, har biri ${batchSize} tadan ketma-ket)`);
 
+  // Boshlanishidan oldin biroz kutish (inson xatti-harakatini imitatsiya qilish uchun)
+  await sleep(Math.floor(Math.random() * 1000) + 500);
+
   for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
     if (stopped) break;
 
@@ -105,8 +108,10 @@ export async function sendBulkMessages(users, message, callbacks = {}, batchSize
         // Add a delay between messages within the batch (except the last message of the batch)
         if (i < batchUsers.length - 1) {
           // Default to at least 2 seconds or a fraction of batchDelay if it's longer
-          const intraDelay = Math.max(2000, Math.floor(batchDelay / 2));
-          await sleep(intraDelay);
+          const baseDelay = Math.max(2000, Math.floor(batchDelay / 2));
+          // Tasodifiy qo'shimcha vaqt (0-1500 ms) ban xavfini kamaytirish uchun
+          const jitter = Math.floor(Math.random() * 1500);
+          await sleep(baseDelay + jitter);
         }
       } catch (err) {
         const errMsg = err.message || String(err);
@@ -161,8 +166,11 @@ export async function sendBulkMessages(users, message, callbacks = {}, batchSize
 
     // Wait between batches (skip after last batch or if stopped)
     if (!stopped && batchIndex < totalBatches - 1) {
-      if (onLog) onLog('info', `⏳ Partiyalararo kutish: ${batchDelay / 1000}s...`);
-      await sleep(batchDelay);
+      // Tasodifiy partiyalararo qo'shimcha vaqt (0-2500 ms)
+      const jitter = Math.floor(Math.random() * 2500);
+      const totalDelay = batchDelay + jitter;
+      if (onLog) onLog('info', `⏳ Partiyalararo kutish: ${(totalDelay / 1000).toFixed(1)}s...`);
+      await sleep(totalDelay);
     }
   }
 

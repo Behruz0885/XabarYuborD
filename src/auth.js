@@ -34,6 +34,25 @@ export function getSavedCredentials() {
 }
 
 /**
+ * Get client options that spoof an official Web client
+ */
+function getClientOptions() {
+  const isBrowser = typeof window !== 'undefined' && typeof window.navigator !== 'undefined';
+  const ua = isBrowser ? navigator.userAgent : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
+  const system = isBrowser ? (navigator.oscpu || navigator.platform || 'Win32') : 'Windows';
+  const lang = isBrowser ? (navigator.language || 'uz').slice(0, 2) : 'uz';
+
+  return {
+    connectionRetries: 5,
+    deviceModel: ua.substring(0, 100),
+    systemVersion: system.substring(0, 30),
+    appVersion: '2.1.8', // Telegram Web K official version
+    langCode: lang,
+    systemLangCode: lang,
+  };
+}
+
+/**
  * Connect to Telegram using saved session (auto-reconnect).
  * Returns true if reconnected successfully.
  */
@@ -44,9 +63,7 @@ export async function reconnectFromSession() {
 
   try {
     const session = new StringSession(savedSession);
-    client = new TelegramClient(session, Number(creds.apiId), creds.apiHash, {
-      connectionRetries: 5,
-    });
+    client = new TelegramClient(session, Number(creds.apiId), creds.apiHash, getClientOptions());
     await client.connect();
 
     // Verify the connection is alive
@@ -75,9 +92,7 @@ export async function reconnectFromSession() {
 export async function loginToTelegram({ apiId, apiHash, phoneNumber, onCodeRequest, onPasswordRequest, onError }) {
   try {
     const session = new StringSession('');
-    client = new TelegramClient(session, Number(apiId), apiHash, {
-      connectionRetries: 5,
-    });
+    client = new TelegramClient(session, Number(apiId), apiHash, getClientOptions());
 
     await client.start({
       phoneNumber: () => phoneNumber,
