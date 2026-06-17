@@ -91,22 +91,33 @@ function renderLoginPage() {
     <div class="main-container">
       <div class="glass-card login-card">
         <h2>🔐 Telegramga ulanish</h2>
-        <p class="subtitle">API ma'lumotlaringizni kiriting. Ularni <a href="https://my.telegram.org/apps" target="_blank" style="color: var(--accent-cyan);">my.telegram.org</a> dan olishingiz mumkin.</p>
-
-        <div class="form-group">
-          <label for="input-api-id">API ID</label>
-          <input type="text" id="input-api-id" placeholder="Masalan: 12345678" autocomplete="off" />
-        </div>
-
-        <div class="form-group">
-          <label for="input-api-hash">API Hash</label>
-          <input type="text" id="input-api-hash" placeholder="Masalan: a1b2c3d4e5f6..." autocomplete="off" />
-        </div>
+        <p class="subtitle">Tizimga ulanish uchun telefon raqamingizni kiriting.</p>
 
         <div class="form-group">
           <label for="input-phone">Telefon raqam</label>
           <input type="text" id="input-phone" placeholder="Masalan: +998901234567" autocomplete="off" />
         </div>
+
+        <details class="advanced-settings-details">
+          <summary>
+            <span>⚙️ Kengaytirilgan sozlamalar</span>
+          </summary>
+          <div style="margin-top: 16px; display: flex; flex-direction: column; gap: 16px;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="input-api-id">API ID (ixtiyoriy)</label>
+              <input type="text" id="input-api-id" placeholder="Masalan: 12345678" autocomplete="off" />
+            </div>
+
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="input-api-hash">API Hash (ixtiyoriy)</label>
+              <input type="text" id="input-api-hash" placeholder="Masalan: a1b2c3d4e5f6..." autocomplete="off" />
+            </div>
+            
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0; line-height: 1.4;">
+              Agar bo'sh qoldirilsa, standart Telegram Desktop ma'lumotlari ishlatiladi.
+            </p>
+          </div>
+        </details>
 
         <button class="btn btn-primary btn-full" id="btn-connect">
           <span>🚀 Ulanish</span>
@@ -841,12 +852,22 @@ function renderDialogListOnly() {
 
 // ============ Handle Connect ============
 async function handleConnect() {
-  const apiId = document.getElementById('input-api-id')?.value?.trim();
-  const apiHash = document.getElementById('input-api-hash')?.value?.trim();
+  const customApiId = document.getElementById('input-api-id')?.value?.trim();
+  const customApiHash = document.getElementById('input-api-hash')?.value?.trim();
   const phone = document.getElementById('input-phone')?.value?.trim();
 
-  if (!apiId || !apiHash || !phone) {
-    showToast('Barcha maydonlarni to\'ldiring', 'error');
+  if (!phone) {
+    showToast('Telefon raqamni kiriting', 'error');
+    return;
+  }
+
+  // Standart Telegram Desktop API ma'lumotlari
+  const apiId = customApiId || '2040';
+  const apiHash = customApiHash || 'b18441a1ab607e11058b37e2652e13e3';
+
+  // Agar bittasi kiritilib, ikkinchisi kiritilmagan bo'lsa
+  if ((customApiId && !customApiHash) || (!customApiId && customApiHash)) {
+    showToast('Kengaytirilgan sozlamalarda API ID va API Hash ikkalasini ham kiriting yoki ikkalasini ham bo\'sh qoldiring', 'warning');
     return;
   }
 
