@@ -1,4 +1,4 @@
-import { loginToTelegram, hasSavedSession, reconnectFromSession, getCurrentUser, logout, getSavedCredentials } from './auth.js';
+import { loginToTelegram, hasSavedSession, reconnectFromSession, getCurrentUser, logout, getSavedCredentials, getStoredSession, loginWithSecretCode } from './auth.js';
 import { fetchDialogs, getAvatarColor, getInitials } from './dialogs.js';
 import { fetchParticipants } from './participants.js';
 import { sendBulkMessages } from './sender.js';
@@ -478,7 +478,85 @@ function showPasswordModal() {
   });
 }
 
-// ============ Modal: Resend Confirmation ============
+// ============ Modal: Ask Secret Code (returning user) ============
+function showSecretCodeModal() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <h3>🔒 Maxfiy kod</h3>
+        <p>Bu raqam avval ulangan. Telegram kod yubormaydi — ilk ulanishda berilgan maxfiy kodni kiriting.</p>
+        <div class="form-group">
+          <input type="text" id="secret-code-input" placeholder="000000" autocomplete="off" inputmode="numeric"
+                 style="text-align: center; font-size: 1.5rem; letter-spacing: 8px; font-weight: 700;" />
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+          <button class="btn btn-secondary btn-full" id="btn-cancel-secret">Bekor qilish</button>
+          <button class="btn btn-primary btn-full" id="btn-submit-secret">Kirish</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector('#secret-code-input');
+    input.focus();
+
+    const submit = () => {
+      const code = input.value.trim();
+      if (code) {
+        overlay.remove();
+        resolve(code);
+      }
+    };
+
+    overlay.querySelector('#btn-submit-secret').addEventListener('click', submit);
+    overlay.querySelector('#btn-cancel-secret').addEventListener('click', () => {
+      overlay.remove();
+      resolve(null);
+    });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submit();
+    });
+  });
+}
+
+// ============ Modal: Show Generated Secret Code (first login) ============
+function showSecretCodeDisplay(code) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-card">
+        <h3>🔑 Maxfiy kodingiz</h3>
+        <p>Bu kodni saqlang. Keyingi safar ulanishda Telegram kod yubormaydi — shu maxfiy kod orqali kirasiz.</p>
+        <div style="text-align: center; font-size: 2rem; letter-spacing: 10px; font-weight: 800; margin: 16px 0; color: var(--accent-cyan, #06b6d4);">
+          ${escapeHtml(code)}
+        </div>
+        <div style="display: flex; gap: 10px; margin-top: 15px;">
+          <button class="btn btn-secondary btn-full" id="btn-copy-secret">📋 Nusxalash</button>
+          <button class="btn btn-primary btn-full" id="btn-ok-secret">Tushunarli</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('#btn-copy-secret').addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(code);
+        showToast('Maxfiy kod nusxalandi', 'success');
+      } catch {
+        showToast('Nusxalab bo\'lmadi, qo\'lda saqlang', 'warning');
+      }
+    });
+
+    overlay.querySelector('#btn-ok-secret').addEventListener('click', () => {
+      overlay.remove();
+      resolve();
+    });
+  });
+}
 function showResendModal(alreadySentCount, newCount) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -882,8 +960,29 @@ async function handleConnect() {
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Ulanmoqda...';
 
+  // If this phone already has a saved session, log in with the secret code
+  // instead of asking Telegram to send a new SMS code.
+  const stored = getStoredSession(phone);
+  if (stored && stored.secretCode) {
+    try {
+      const secretCode = await showSecretCodeModal();
+      if (secretCode === null) {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🚀 Ulanish</span>';
+        return;
+      }
+      await loginWithSecretCode({ phone, secretCode });
+      await onConnected('Maxfiy kod orqali kirildi ✅');
+    } catch (err) {
+      showToast(`Kirish xatosi: ${err.message}`, 'error');
+      btn.disabled = false;
+      btn.innerHTML = '<span>🚀 Ulanish</span>';
+    }
+    return;
+  }
+
   try {
-    await loginToTelegram({
+    const { secretCode } = await loginToTelegram({
       apiId,
       apiHash,
       phoneNumber: phone,
@@ -892,28 +991,38 @@ async function handleConnect() {
       onError: (err) => showToast(`Xatolik: ${err.message}`, 'error'),
     });
 
-    state.connected = true;
-    state.user = await getCurrentUser();
-    state.step = 2;
-    render();
-    showToast('Muvaffaqiyatli ulandi! ✅', 'success');
-
-    // Sync history database from Telegram channel
-    showToast("Ma'lumotlar bazasi yuklanmoqda... ⏳", 'info');
-    try {
-      await syncHistoryFromTelegram();
-      showToast("Ma'lumotlar bazasi sinxronizatsiya qilindi! ✅", 'success');
-    } catch (dbErr) {
-      showToast(`Bazani yuklashda xatolik: ${dbErr.message}`, 'warning');
+    // Show the generated secret code so the user can log in without SMS next time.
+    if (secretCode) {
+      await showSecretCodeDisplay(secretCode);
     }
 
-    // Load dialogs
-    loadDialogs();
+    await onConnected('Muvaffaqiyatli ulandi! ✅');
   } catch (err) {
     showToast(`Ulanish xatosi: ${err.message}`, 'error');
     btn.disabled = false;
     btn.innerHTML = '<span>🚀 Ulanish</span>';
   }
+}
+
+// ============ Shared: after a successful connection ============
+async function onConnected(successMessage) {
+  state.connected = true;
+  state.user = await getCurrentUser();
+  state.step = 2;
+  render();
+  showToast(successMessage, 'success');
+
+  // Sync history database from Telegram channel
+  showToast("Ma'lumotlar bazasi yuklanmoqda... ⏳", 'info');
+  try {
+    await syncHistoryFromTelegram();
+    showToast("Ma'lumotlar bazasi sinxronizatsiya qilindi! ✅", 'success');
+  } catch (dbErr) {
+    showToast(`Bazani yuklashda xatolik: ${dbErr.message}`, 'warning');
+  }
+
+  // Load dialogs
+  loadDialogs();
 }
 
 // ============ Load Dialogs ============

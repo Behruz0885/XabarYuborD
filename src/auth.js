@@ -18,6 +18,103 @@ export function hasSavedSession() {
   return !!localStorage.getItem('xabarbot_session');
 }
 
+const SESSIONS_KEY = 'xabarbot_sessions';
+
+/**
+ * Normalize a phone number to use as a stable storage key.
+ */
+function normalizePhone(phone) {
+  if (!phone) return '';
+  const trimmed = String(phone).trim().replace(/[\s\-()]/g, '');
+  return trimmed.startsWith('+') ? '+' + trimmed.slice(1).replace(/\D/g, '') : trimmed.replace(/\D/g, '');
+}
+
+/**
+ * Read the map of stored sessions keyed by phone number.
+ */
+function readSessionsMap() {
+  try {
+    return JSON.parse(localStorage.getItem(SESSIONS_KEY) || '{}') || {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Persist the sessions map back to localStorage.
+ */
+function writeSessionsMap(map) {
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(map));
+}
+
+/**
+ * Generate a random 6-digit secret code.
+ */
+function generateSecretCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+/**
+ * Get the stored session entry for a phone number, if any.
+ * Returns { sessionString, apiId, apiHash, secretCode } or null.
+ */
+export function getStoredSession(phone) {
+  const key = normalizePhone(phone);
+  if (!key) return null;
+  const map = readSessionsMap();
+  return map[key] || null;
+}
+
+/**
+ * Save a session entry keyed by phone number.
+ */
+function saveStoredSession(phone, entry) {
+  const key = normalizePhone(phone);
+  if (!key) return;
+  const map = readSessionsMap();
+  map[key] = entry;
+  writeSessionsMap(map);
+}
+
+/**
+ * Reconnect using a stored session protected by a secret code.
+ * Verifies the secret code, then restores the saved session without
+ * triggering a new Telegram SMS code.
+ * @returns {Promise<boolean>} true if reconnected successfully.
+ */
+export async function loginWithSecretCode({ phone, secretCode }) {
+  const entry = getStoredSession(phone);
+  if (!entry) {
+    throw new Error('Bu raqam uchun saqlangan sessiya topilmadi');
+  }
+  if (String(secretCode).trim() !== String(entry.secretCode)) {
+    throw new Error('Maxfiy kod noto\'g\'ri');
+  }
+
+  try {
+    const session = new StringSession(entry.sessionString);
+    client = new TelegramClient(session, Number(entry.apiId), entry.apiHash, getClientOptions());
+    await client.connect();
+
+    const me = await client.getMe();
+    if (!me) {
+      throw new Error('Sessiya yaroqsiz, qaytadan ulaning');
+    }
+
+    // Refresh the active session pointers used for auto-reconnect on reload.
+    sessionString = client.session.save();
+    localStorage.setItem('xabarbot_session', sessionString);
+    localStorage.setItem('xabarbot_credentials', JSON.stringify({ apiId: entry.apiId, apiHash: entry.apiHash }));
+    saveStoredSession(phone, { ...entry, sessionString });
+
+    return true;
+  } catch (err) {
+    console.error('Secret code login failed:', err);
+    client = null;
+    throw err;
+  }
+}
+
 /**
  * Get saved credentials from localStorage.
  */
@@ -88,6 +185,7 @@ export async function reconnectFromSession() {
  * @param {function} params.onCodeRequest - async function that returns the SMS code
  * @param {function} params.onPasswordRequest - async function that returns the 2FA password
  * @param {function} params.onError - called on error
+ * @returns {Promise<{secretCode: string}>} the generated secret code for future logins
  */
 export async function loginToTelegram({ apiId, apiHash, phoneNumber, onCodeRequest, onPasswordRequest, onError }) {
   try {
@@ -121,7 +219,14 @@ export async function loginToTelegram({ apiId, apiHash, phoneNumber, onCodeReque
     localStorage.setItem('xabarbot_session', sessionString);
     localStorage.setItem('xabarbot_credentials', JSON.stringify({ apiId, apiHash }));
 
-    return true;
+    // Reuse an existing secret code for this phone if one was already issued,
+    // otherwise generate a new one. Save the session keyed by phone so the
+    // user can log in again with just the secret code (no new Telegram SMS).
+    const existing = getStoredSession(phoneNumber);
+    const secretCode = existing?.secretCode || generateSecretCode();
+    saveStoredSession(phoneNumber, { sessionString, apiId, apiHash, secretCode });
+
+    return { secretCode };
   } catch (err) {
     console.error('Login failed:', err);
     client = null;
